@@ -1,0 +1,14 @@
+{
+  "name": "azure-finops",
+  "description": "Read-only Azure FinOps review plugin for Claude Code.",
+  "owner": {
+    "name": "Mika765"
+  },
+  "plugins": [
+    {
+      "name": "azure-finops-review",
+      "source": "./plugins/azure-finops-review",
+      "description": "Read-only Azure FinOps review skill with an enforced read-only guard."
+    }
+  ]
+}

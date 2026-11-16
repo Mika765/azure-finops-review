@@ -1,0 +1,17 @@
+{
+  "description": "Read-only guard: blocks Azure CLI / Az PowerShell / az rest / Terraform / kubectl / helm commands that would change anything.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "IN=$(cat); PY=python3; $PY -c 1 >/dev/null 2>&1 || PY=python; printf '%s' \"$IN\" | $PY \"${CLAUDE_PLUGIN_ROOT}/skills/azure-finops-review/hooks/readonly_guard.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

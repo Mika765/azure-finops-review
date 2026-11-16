@@ -1,0 +1,8 @@
+{
+  "name": "azure-finops-review",
+  "version": "1.0.0",
+  "description": "Read-only Azure FinOps review: explain cost spikes, find and verify savings, build a savings roadmap, forecast month close. Includes a hook that blocks any command that would change Azure.",
+  "author": { "name": "Mika765" },
+  "license": "MIT",
+  "keywords": ["azure", "finops", "cost-management", "forecast", "read-only"]
+}
