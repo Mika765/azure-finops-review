@@ -168,7 +168,7 @@ Forecast with the script:
 python scripts/finops_cost.py --tenant <tenantId> --forecast 2026-11 --rate-days 10
 ```
 
-It computes: actual month-to-date (complete days) + remaining weekdays x weekday rate + remaining weekend days x weekend rate + known one-off charges not yet billed (e.g. a monthly reservation charge, `--one-off 498@13`). Report the forecast as a **point estimate with a range** (low = quiet-day rate, high = busy-day rate) and state the assumptions. When a later check moves the number, say so explicitly and explain why (e.g. "the baseline days were unusually quiet") rather than silently replacing it.
+It computes: actual month-to-date (complete days) + remaining weekdays x weekday rate + remaining weekend days x weekend rate + known one-off charges not yet billed (e.g. a monthly reservation charge, `--one-off 500@1`). Report the forecast as a **point estimate with a range** (low = quiet-day rate, high = busy-day rate) and state the assumptions. When a later check moves the number, say so explicitly and explain why (e.g. "the baseline days were unusually quiet") rather than silently replacing it.
 
 Also compare against the budget and the previous months, and give the annualized run rate.
 

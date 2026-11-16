@@ -17,7 +17,7 @@ Examples:
   finops_cost.py --tenant <tid> --from 2026-07-01 --to 2026-10-31 --granularity Monthly --by subscription
   finops_cost.py --tenant <tid> --group ServiceName --before 2026-10-20:2026-10-23 --after 2026-10-27:2026-10-30
   finops_cost.py --subscriptions <id> --from ... --to ... --group ResourceId,Meter --service Sentinel
-  finops_cost.py --tenant <tid> --forecast 2026-11 --rate-days 10 --one-off 498@13
+  finops_cost.py --tenant <tid> --forecast 2026-11 --rate-days 10 --one-off 500@1
 """
 import argparse
 import calendar
@@ -391,7 +391,7 @@ def main():
     p.add_argument("--forecast", help="YYYY-MM month to forecast")
     p.add_argument("--rate-days", type=int, default=10, help="complete days used for run rates")
     p.add_argument("--complete-through", help="last complete day (default: today-2)")
-    p.add_argument("--one-off", action="append", help="AMOUNT@DAY charge in the forecast month, e.g. 498@13")
+    p.add_argument("--one-off", action="append", help="AMOUNT@DAY charge in the forecast month, e.g. 500@1")
     p.add_argument("--spike-factor", type=float, default=1.5)
     p.add_argument("--json", help="also write results to this JSON file")
     p.add_argument("--pause", type=float, default=2.0, help="seconds between subscriptions (throttling)")

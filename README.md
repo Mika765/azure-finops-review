@@ -60,7 +60,7 @@ Ask your agent things like:
 The cost script also runs on its own:
 
 ```bash
-python scripts/finops_cost.py --tenant <tenantId> --forecast 2026-11 --rate-days 10 --one-off 498@13
+python scripts/finops_cost.py --tenant <tenantId> --forecast 2026-11 --rate-days 10 --one-off 500@1
 python scripts/finops_cost.py --tenant <tenantId> --group ServiceName --before 2026-10-01:2026-10-07 --after 2026-10-15:2026-10-21
 python scripts/finops_cost.py --help
 ```
