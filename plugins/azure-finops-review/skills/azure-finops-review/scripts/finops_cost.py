@@ -300,36 +300,33 @@ def cmd_group(a, subs):
             print("\t".join(k) + f"\t{fmt(t)}\t{fmt(t / ndays)}")
 
 
-def cmd_forecast(a, subs):
-    y, m = map(int, a.forecast.split("-"))
+def band(vals):
+    mean = statistics.mean(vals)
+    if len(vals) >= 4:
+        q = statistics.quantiles(vals, n=4)
+        return mean, q[0], q[2]
+    return mean, min(vals), max(vals)
+
+
+def compute_forecast(tot, month, complete, rate_days=10, one_off=None, spike_factor=1.5):
+    """Month-close forecast from daily totals {date: cost}. Pure function (no Azure calls).
+
+    actual complete days + remaining weekdays x weekday rate + remaining weekend
+    days x weekend rate + one-off charges not yet billed. Returns a dict.
+    """
+    y, m = map(int, month.split("-"))
     m_start = dt.date(y, m, 1)
     m_end = dt.date(y, m, calendar.monthrange(y, m)[1])
-    today = dt.date.today()
-    complete = dt.date.fromisoformat(a.complete_through) if a.complete_through else today - dt.timedelta(days=2)
     complete = min(complete, m_end)
-    q_start = min(m_start, complete - dt.timedelta(days=max(a.rate_days * 2, 21)))
-    data = collect(subs, q_start.isoformat(), min(today, m_end).isoformat(), cost_type=a.cost_type)
-    tot = collections.defaultdict(float)
-    for _, r in data:
-        tot[day_of(r)] += r["Cost"]
     hist = {d: v for d, v in tot.items() if d <= complete}
-    spikes = flag_spikes(hist, a.spike_factor)
-    window = sorted(d for d in hist if d not in spikes)[-a.rate_days:]
+    spikes = flag_spikes(hist, spike_factor, quiet=True)
+    window = sorted(d for d in hist if d not in spikes)[-rate_days:]
     wk = [hist[d] for d in window if d.weekday() < 5]
     we = [hist[d] for d in window if d.weekday() >= 5]
     if not wk:
         sys.exit("No complete weekdays in the rate window; widen --rate-days")
     if not we:
-        we_hist = [hist[d] for d in sorted(hist) if d.weekday() >= 5 and d not in spikes][-4:]
-        we = we_hist or wk
-
-    def band(vals):
-        mean = statistics.mean(vals)
-        if len(vals) >= 4:
-            q = statistics.quantiles(vals, n=4)
-            return mean, q[0], q[2]
-        return mean, min(vals), max(vals)
-
+        we = [hist[d] for d in sorted(hist) if d.weekday() >= 5 and d not in spikes][-4:] or wk
     wk_r, wk_lo, wk_hi = band(wk)
     we_r, we_lo, we_hi = band(we)
     mtd = sum(v for d, v in hist.items() if m_start <= d <= complete)
@@ -337,9 +334,8 @@ def cmd_forecast(a, subs):
     rem = [d for d in rem if d > complete]
     n_wk = sum(1 for d in rem if d.weekday() < 5)
     n_we = len(rem) - n_wk
-    one_offs = 0.0
-    notes = []
-    for o in a.one_off or []:
+    one_offs, notes = 0.0, []
+    for o in one_off or []:
         amt, day = o.split("@")
         dday = dt.date(y, m, int(day))
         if dday > complete:
@@ -347,30 +343,59 @@ def cmd_forecast(a, subs):
             notes.append(f"one-off {amt} on {dday} (not yet billed)")
         else:
             notes.append(f"one-off {amt} on {dday} already in actuals")
-    point = mtd + n_wk * wk_r + n_we * we_r + one_offs
-    low = mtd + n_wk * wk_lo + n_we * we_lo + one_offs
-    high = mtd + n_wk * wk_hi + n_we * we_hi + one_offs
+    return {
+        "month": month, "m_start": m_start, "m_end": m_end, "complete": complete,
+        "window": window, "spikes": spikes, "notes": notes, "remaining": rem,
+        "weekday_rate": wk_r, "weekday_low": wk_lo, "weekday_high": wk_hi, "n_weekday_obs": len(wk),
+        "weekend_rate": we_r, "weekend_low": we_lo, "weekend_high": we_hi, "n_weekend_obs": len(we),
+        "mtd": mtd, "remaining_weekdays": n_wk, "remaining_weekend_days": n_we, "one_offs": one_offs,
+        "forecast": mtd + n_wk * wk_r + n_we * we_r + one_offs,
+        "low": mtd + n_wk * wk_lo + n_we * we_lo + one_offs,
+        "high": mtd + n_wk * wk_hi + n_we * we_hi + one_offs,
+    }
 
+
+def forecast_window(month, complete_through, rate_days):
+    """(query start, query end, last complete day) for a forecast of `month`."""
+    y, m = map(int, month.split("-"))
+    m_start = dt.date(y, m, 1)
+    m_end = dt.date(y, m, calendar.monthrange(y, m)[1])
+    today = dt.date.today()
+    complete = dt.date.fromisoformat(complete_through) if complete_through else today - dt.timedelta(days=2)
+    complete = min(complete, m_end)
+    q_start = min(m_start, complete - dt.timedelta(days=max(rate_days * 2, 21)))
+    return q_start, min(today, m_end), complete
+
+
+def cmd_forecast(a, subs):
+    q_start, q_end, complete = forecast_window(a.forecast, a.complete_through, a.rate_days)
+    data = collect(subs, q_start.isoformat(), q_end.isoformat(), cost_type=a.cost_type)
+    tot = collections.defaultdict(float)
+    for _, r in data:
+        tot[day_of(r)] += r["Cost"]
+    f = compute_forecast(tot, a.forecast, complete, a.rate_days, a.one_off, a.spike_factor)
+    if f["spikes"]:
+        print("One-off days (excluded from run rates): " +
+              ", ".join(f"{d} +{fmt(x)} over typical" for d, x in sorted(f["spikes"].items())))
     print(f"Scope: {len(subs)} subscription(s): {', '.join(n for _, n, _ in subs)}  [{a.cost_type}]")
-    print(f"Complete days through {complete} (later days are partial: late meters post 24-48 h)")
-    print(f"Rate window: {window[0]} .. {window[-1]} ({len(window)} days, one-offs excluded)")
-    print(f"  weekday rate {fmt(wk_r)}/day (range {fmt(wk_lo)}-{fmt(wk_hi)}, n={len(wk)})")
-    print(f"  weekend rate {fmt(we_r)}/day (range {fmt(we_lo)}-{fmt(we_hi)}, n={len(we)})")
-    print(f"\nActual {m_start}..{complete}: {fmt(mtd)}")
-    print(f"Remaining: {n_wk} weekdays x {fmt(wk_r)} + {n_we} weekend days x {fmt(we_r)} = {fmt(n_wk * wk_r + n_we * we_r)}")
-    for n in notes:
+    print(f"Complete days through {f['complete']} (later days are partial: late meters post 24-48 h)")
+    print(f"Rate window: {f['window'][0]} .. {f['window'][-1]} ({len(f['window'])} days, one-offs excluded)")
+    print(f"  weekday rate {fmt(f['weekday_rate'])}/day (range {fmt(f['weekday_low'])}-{fmt(f['weekday_high'])}, n={f['n_weekday_obs']})")
+    print(f"  weekend rate {fmt(f['weekend_rate'])}/day (range {fmt(f['weekend_low'])}-{fmt(f['weekend_high'])}, n={f['n_weekend_obs']})")
+    print(f"\nActual {f['m_start']}..{f['complete']}: {fmt(f['mtd'])}")
+    rest = f["remaining_weekdays"] * f["weekday_rate"] + f["remaining_weekend_days"] * f["weekend_rate"]
+    print(f"Remaining: {f['remaining_weekdays']} weekdays x {fmt(f['weekday_rate'])} + "
+          f"{f['remaining_weekend_days']} weekend days x {fmt(f['weekend_rate'])} = {fmt(rest)}")
+    for n in f["notes"]:
         print("  " + n)
-    print(f"\nFORECAST {a.forecast}: {fmt(point)}  (range {fmt(low)} - {fmt(high)})")
-    prev_end = m_start - dt.timedelta(days=1)
+    print(f"\nFORECAST {a.forecast}: {fmt(f['forecast'])}  (range {fmt(f['low'])} - {fmt(f['high'])})")
     print("\nRecent days:")
     for d in sorted(tot)[-10:]:
-        tag = " partial" if d > complete else (" one-off" if d in spikes else "")
+        tag = " partial" if d > f["complete"] else (" one-off" if d in f["spikes"] else "")
         print(f"  {d} {d.strftime('%a')} {fmt(tot[d])}{tag}")
     if a.json:
-        json.dump({"month": a.forecast, "forecast": point, "low": low, "high": high, "mtd": mtd,
-                   "complete_through": str(complete), "weekday_rate": wk_r, "weekend_rate": we_r,
-                   "remaining_weekdays": n_wk, "remaining_weekend_days": n_we, "one_offs": one_offs,
-                   "previous_month_end": str(prev_end)}, open(a.json, "w"), indent=1)
+        json.dump({k: (str(v) if isinstance(v, dt.date) else v) for k, v in f.items()
+                   if k not in ("window", "spikes", "notes", "remaining")}, open(a.json, "w"), indent=1)
 
 
 def main():

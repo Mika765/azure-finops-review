@@ -1,6 +1,6 @@
 ---
 name: azure-finops-review
-description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, and produce month-end forecasts. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
+description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, produce month-end forecasts, and generate a self-contained HTML cost dashboard. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, a cost dashboard or report to share, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
 hooks:
   PreToolUse:
     - matcher: "Bash|PowerShell"
@@ -175,6 +175,24 @@ Also compare against the budget and the previous months, and give the annualized
 ## 7. Reporting
 
 Use `references/report-template.md`. Keep the executive summary to numbers a manager can repeat: bill before, run rate now, savings in place (monthly + yearly + %), month close, next-month forecast, remaining potential, top risks. Keep a **corrections** section: when an earlier statement turns out wrong, record it — it is what makes the report trustworthy.
+
+### Dashboard
+
+When the user wants something to look at or share (a status update, a monthly review, "show me"), also build the dashboard:
+
+```bash
+python scripts/finops_dashboard.py --tenant <tenantId> --month 2026-11 --budget 20000 --findings findings.json --out finops-dashboard-2026-11.html
+```
+
+It writes **one self-contained HTML file** (no server, no internet, works offline and by email): forecast with range and budget, daily cost (actual / still posting / forecast), cumulative spend against the previous month and the budget, cost by subscription and by service, biggest changes by service, and the savings roadmap. It is read-only like the cost script and uses the same forecast, so its numbers match what you report in text.
+
+- `--budget`: pass the amount you found with Q-BUD (the script does not read budgets itself).
+- `--one-off AMOUNT@DAY`: known monthly charges, same as the forecast.
+- `--findings findings.json`: your findings from section 3, as a list of `{"id", "title", "saving_low", "saving_high", "confidence": "verified|estimated|possible", "wave", "owner", "status": "open|done"}`. Write this file yourself from the review; leave it out if you did not look for savings.
+- `--save-data data.json` keeps the numbers; `--data data.json` re-renders without calling Azure (e.g. after adding findings).
+- `--demo` renders synthetic data, useful to show the layout without any tenant access.
+
+The file contains the tenant's cost data and subscription names: tell the user where it was written and let them decide who gets it. Don't upload it anywhere.
 
 ## Pitfalls checklist
 

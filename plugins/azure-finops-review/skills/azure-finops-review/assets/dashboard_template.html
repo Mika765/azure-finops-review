@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Azure cost dashboard</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10);
+  --series: #2a78d6; --series-soft: #86b6ef; --track: #cde2fb; --deemph: #c3c2b7;
+  --up: #e34948; --down: #2a78d6; --mid: #f0efec;
+  --good-text: #006300; --good: #0ca30c; --warning: #fab219; --critical: #d03b3b;
+  --wash: rgba(42,120,214,.10);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+    --series: #3987e5; --series-soft: #184f95; --track: #0d366b; --deemph: #52514e;
+    --up: #e66767; --down: #3987e5; --mid: #383835;
+    --good-text: #0ca30c; --good: #0ca30c; --warning: #fab219; --critical: #e66767;
+    --wash: rgba(57,135,229,.14);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10);
+  --series: #3987e5; --series-soft: #184f95; --track: #0d366b; --deemph: #52514e;
+  --up: #e66767; --down: #3987e5; --mid: #383835;
+  --good-text: #0ca30c; --good: #0ca30c; --warning: #fab219; --critical: #e66767;
+  --wash: rgba(57,135,229,.14);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; }
+header.top { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 22px; font-weight: 650; margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--ink-2); margin-top: 2px; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge { border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; font-size: 12px; color: var(--ink-2); background: var(--surface); white-space: nowrap; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+.c12 { grid-column: span 12; } .c8 { grid-column: span 8; } .c7 { grid-column: span 7; } .c6 { grid-column: span 6; }
+.c5 { grid-column: span 5; } .c4 { grid-column: span 4; } .c3 { grid-column: span 3; }
+@media (max-width: 900px) { .c8, .c7, .c6, .c5, .c4 { grid-column: span 12; } .c3 { grid-column: span 6; } }
+@media (max-width: 520px) { .c3 { grid-column: span 12; } }
+h2 { font-size: 14px; font-weight: 650; margin: 0; }
+.cap { color: var(--ink-2); font-size: 12.5px; margin: 2px 0 12px; }
+.label { color: var(--ink-2); font-size: 12.5px; }
+.hero { font-size: 52px; font-weight: 650; line-height: 1.05; letter-spacing: -.02em; margin: 6px 0 4px; }
+.stat { font-size: 26px; font-weight: 650; letter-spacing: -.01em; margin-top: 4px; }
+.note { color: var(--ink-2); font-size: 12.5px; }
+.delta { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: 13px; }
+.delta.good { color: var(--good-text); } .delta.bad { color: var(--critical); } .delta.flat { color: var(--ink-2); }
+.meter { height: 8px; border-radius: 999px; background: var(--track); position: relative; margin: 14px 0 6px; }
+.meter > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--series); }
+.meter.over > i { background: var(--critical); }
+.meter > b { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); border-radius: 1px; }
+.meter-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--ink-2); }
+.meter-legend strong { color: var(--ink); font-weight: 600; }
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; margin-top: 8px; }
+.status .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-size: 10px; line-height: 1; }
+.status.ok .dot { background: var(--good); } .status.warn .dot { background: var(--warning); color: #0b0b0b; } .status.crit .dot { background: var(--critical); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.lk { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+.lk.dash { border-top-style: dashed; }
+svg { display: block; width: 100%; overflow: visible; }
+svg text { font: 11.5px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--muted); font-variant-numeric: tabular-nums; }
+svg text.lbl { fill: var(--ink-2); font-weight: 600; }
+.rows { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; gap: 8px 12px; align-items: center; }
+.rows .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .val { font-variant-numeric: tabular-nums; text-align: right; color: var(--ink); white-space: nowrap; }
+.rows .val small { color: var(--ink-2); font-size: 12px; margin-left: 6px; }
+.bar { height: 16px; position: relative; border-radius: 4px; outline: none; }
+.bar > i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--series); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar:hover > i, .bar:focus-visible > i { filter: brightness(1.12); }
+.bar:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--series); }
+.div { height: 16px; position: relative; outline: none; border-radius: 4px; }
+.div::before { content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: var(--axis); }
+.div > i { position: absolute; top: 0; bottom: 0; min-width: 2px; }
+.div > i.neg { background: var(--down); border-radius: 4px 0 0 4px; }
+.div > i.pos { background: var(--up); border-radius: 0 4px 4px 0; }
+.div:hover > i, .div:focus-visible > i { filter: brightness(1.12); }
+.div:focus-visible { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--series); }
+details { margin-top: 12px; }
+summary { cursor: pointer; color: var(--ink-2); font-size: 12.5px; width: fit-content; }
+.tablewrap { overflow-x: auto; margin-top: 8px; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 600; white-space: nowrap; }
+td.n, th.n { text-align: right; padding-right: 20px; padding-left: 10px; white-space: nowrap; }
+td.n:last-child, th.n:last-child { padding-right: 0; }
+.pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--deemph); }
+.pill.verified::before { background: var(--good); } .pill.estimated::before { background: var(--series); }
+.pill.done::before { background: var(--good); }
+#tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12.5px; box-shadow: 0 6px 20px rgba(0,0,0,.14); max-width: 280px; display: none; }
+#tip .t { color: var(--ink-2); margin-bottom: 4px; }
+#tip .r { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+#tip .r span { color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+#tip .r strong { font-variant-numeric: tabular-nums; }
+footer { color: var(--ink-2); font-size: 12.5px; margin-top: 20px; }
+footer ul { margin: 6px 0 0; padding-left: 18px; }
+.demo { background: var(--warning); color: #0b0b0b; border-color: transparent; font-weight: 600; }
+@media print { body { background: #fff; } .card { break-inside: avoid; } details { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div><h1 id="title"></h1><div class="sub" id="subtitle"></div></div>
+    <div class="badges" id="badges"></div>
+  </header>
+  <div class="grid" id="grid"></div>
+  <footer id="foot"></footer>
+</div>
+<div id="tip" role="status"></div>
+<script>
+const D = /*__DATA__*/null;
+(function () {
+  "use strict";
+  const NS = "http://www.w3.org/2000/svg";
+  const cur = D.meta.currency || "EUR";
+  const money0 = new Intl.NumberFormat("en", { style: "currency", currency: cur, maximumFractionDigits: 0 });
+  const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+  const num0 = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
+  const m = v => money0.format(v);
+  const pct = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toFixed(Math.abs(v) < 10 ? 1 : 0) + "%";
+  const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "") + money0.format(Math.abs(v));
+  const date = s => new Date(s + "T00:00:00Z");
+  const dfmt = new Intl.DateTimeFormat("en", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  const mfmt = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+  const mname = s => mfmt.format(date(s + "-01"));
+  const mshort = s => new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(date(s + "-01"));
+
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function sv(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; }
+  function card(span, title, caption) {
+    const c = el("section", "card " + span);
+    if (title) c.appendChild(el("h2", null, title));
+    if (caption) c.appendChild(el("div", "cap", caption));
+    document.getElementById("grid").appendChild(c);
+    return c;
+  }
+  function table(parent, head, rows, numeric) {
+    const d = el("details"); d.appendChild(el("summary", null, "Table view"));
+    const w = el("div", "tablewrap"), t = el("table"), th = el("tr");
+    head.forEach((h, i) => th.appendChild(el("th", numeric.includes(i) ? "n" : null, h)));
+    const thead = el("thead"); thead.appendChild(th); t.appendChild(thead);
+    const tb = el("tbody");
+    rows.forEach(r => { const tr = el("tr"); r.forEach((v, i) => tr.appendChild(el("td", numeric.includes(i) ? "n" : null, v))); tb.appendChild(tr); });
+    t.appendChild(tb); w.appendChild(t); d.appendChild(w); parent.appendChild(d);
+  }
+
+  // ---- tooltip -----------------------------------------------------------
+  const tip = document.getElementById("tip");
+  function showTip(x, y, title, rows) {
+    tip.textContent = "";
+    if (title) tip.appendChild(el("div", "t", title));
+    rows.forEach(r => {
+      const row = el("div", "r"), k = el("span");
+      if (r.color) { const key = el("i", "lk" + (r.dash ? " dash" : "")); key.style.borderTopColor = r.color; k.appendChild(key); }
+      k.appendChild(document.createTextNode(r.name));
+      row.appendChild(k); row.appendChild(el("strong", null, r.value)); tip.appendChild(row);
+    });
+    tip.style.display = "block";
+    const b = tip.getBoundingClientRect();
+    let left = x + 14, top = y + 14;
+    if (left + b.width > innerWidth - 8) left = x - b.width - 14;
+    if (top + b.height > innerHeight - 8) top = y - b.height - 14;
+    tip.style.left = Math.max(8, left) + "px"; tip.style.top = Math.max(8, top) + "px";
+  }
+  function hideTip() { tip.style.display = "none"; }
+  function hover(node, title, rows) {
+    node.addEventListener("pointermove", e => showTip(e.clientX, e.clientY, title, rows));
+    node.addEventListener("pointerleave", hideTip);
+    node.addEventListener("focus", () => { const b = node.getBoundingClientRect(); showTip(b.left + b.width / 2, b.top, title, rows); });
+    node.addEventListener("blur", hideTip);
+  }
+  function niceTicks(max, n) {
+    if (max <= 0) return [0, 1];
+    const raw = max / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+    const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p, out = [];
+    for (let v = 0; v < max + step * 0.999; v += step) out.push(+v.toFixed(6));
+    return out;
+  }
+  const axisFmt = (v, top) => top >= 10000 ? compact.format(v) : num0.format(v);
+  function responsive(host, draw) {
+    let last = 0;
+    const run = () => { const w = Math.floor(host.clientWidth); if (w && w !== last) { last = w; host.textContent = ""; draw(w); } };
+    new ResizeObserver(run).observe(host); run();
+  }
+
+  // ---- header ------------------------------------------------------------
+  const F = D.forecast, P = D.prev || {};
+  document.title = D.meta.title + " — " + mname(D.meta.month);
+  document.getElementById("title").textContent = D.meta.title + " — " + mname(D.meta.month);
+  document.getElementById("subtitle").textContent =
+    D.meta.scope.length + " subscription" + (D.meta.scope.length === 1 ? "" : "s") + ": " + D.meta.scope.join(", ");
+  const badges = document.getElementById("badges");
+  if (D.meta.demo) badges.appendChild(el("span", "badge demo", "Demo data"));
+  ["Generated " + D.meta.generated, "Complete through " + dfmt.format(date(D.meta.complete_through)), D.meta.cost_type, cur, "Read-only"]
+    .forEach(t => badges.appendChild(el("span", "badge", t)));
+
+  // ---- hero: month close ---------------------------------------------------
+  (function () {
+    const c = card(D.budget ? "c5" : "c4");
+    c.appendChild(el("div", "label", "Forecast month close"));
+    c.appendChild(el("div", "hero", m(F.forecast)));
+    c.appendChild(el("div", "note", "Likely range " + m(F.low) + " – " + m(F.high)));
+    if (P.total) {
+      const ch = (F.forecast / P.total - 1) * 100, d = el("div", "delta " + (Math.abs(ch) < 0.5 ? "flat" : ch < 0 ? "good" : "bad"));
+      d.style.marginTop = "8px";
+      d.appendChild(el("span", null, ch < 0 ? "▼" : ch > 0 ? "▲" : "●"));
+      d.appendChild(el("span", null, pct(ch) + " vs " + mshort(P.month) + " (" + m(P.total) + ")"));
+      c.appendChild(d);
+    }
+    if (D.budget) {
+      const spent = F.mtd_now, over = F.forecast > D.budget, near = !over && F.forecast > D.budget * 0.9;
+      const mt = el("div", "meter" + (over ? " over" : "")); mt.setAttribute("role", "img");
+      mt.setAttribute("aria-label", "Spent " + m(spent) + " of " + m(D.budget) + " budget; forecast " + m(F.forecast));
+      const fill = el("i"); fill.style.width = Math.min(100, spent / D.budget * 100) + "%"; mt.appendChild(fill);
+      const tick = el("b"); tick.style.left = "calc(" + Math.min(100, F.forecast / D.budget * 100) + "% - 1px)"; mt.appendChild(tick);
+      c.appendChild(mt);
+      const lg = el("div", "meter-legend");
+      [["Spent so far", m(spent) + " (" + Math.round(spent / D.budget * 100) + "%)"],
+       ["Forecast", Math.round(F.forecast / D.budget * 100) + "% of budget"], ["Budget", m(D.budget)]].forEach(p => {
+        const s = el("span"); s.appendChild(document.createTextNode(p[0] + " ")); s.appendChild(el("strong", null, p[1])); lg.appendChild(s);
+      });
+      c.appendChild(lg);
+      const st = el("div", "status " + (over ? "crit" : near ? "warn" : "ok"));
+      st.appendChild(el("span", "dot", over ? "!" : near ? "!" : "✓"));
+      st.appendChild(el("span", null, over ? "Forecast is " + m(F.forecast - D.budget) + " over budget"
+        : near ? "Forecast is within 10% of budget" : "Forecast is " + m(D.budget - F.forecast) + " under budget"));
+      c.appendChild(st);
+    }
+  })();
+
+  // ---- stat tiles ------------------------------------------------------------
+  (function () {
+    const host = el("div", "grid " + (D.budget ? "c7" : "c8"));
+    document.getElementById("grid").appendChild(host);
+    const tile = (label, value, note, deltaNode) => {
+      const t = el("section", "card c6"); t.appendChild(el("div", "label", label)); t.appendChild(el("div", "stat", value));
+      if (deltaNode) t.appendChild(deltaNode); if (note) t.appendChild(el("div", "note", note)); host.appendChild(t);
+    };
+    let dn = null;
+    if (P.same_period) {
+      const ch = (F.mtd / P.same_period - 1) * 100;
+      dn = el("div", "delta " + (Math.abs(ch) < 0.5 ? "flat" : ch < 0 ? "good" : "bad"));
+      dn.appendChild(el("span", null, ch < 0 ? "▼" : ch > 0 ? "▲" : "●"));
+      dn.appendChild(el("span", null, pct(ch) + " vs same days in " + mshort(P.month)));
+    }
+    tile("Month to date (complete days)", m(F.mtd), "1–" + date(D.meta.complete_through).getUTCDate() + " " + mshort(D.meta.month) +
+      "; later days are still posting", dn);
+    tile("Weekday run rate", m(F.weekday_rate) + " / day", "Typical range " + m(F.weekday_low) + " – " + m(F.weekday_high));
+    tile("Weekend run rate", m(F.weekend_rate) + " / day", "Typical range " + m(F.weekend_low) + " – " + m(F.weekend_high));
+    tile("Annualised run rate", m(F.weekday_rate * 261 + F.weekend_rate * 104),
+      "At today’s rates, before one-off charges" );
+  })();
+
+  // ---- daily cost ----------------------------------------------------------------
+  (function () {
+    const c = card("c12", "Daily cost", "Each column is one day. Days after " + dfmt.format(date(D.meta.complete_through)) +
+      " are incomplete or projected from the run rates.");
+    const lg = el("div", "legend");
+    [["var(--series)", "Actual"], ["var(--series-soft)", "Still posting (partial)"], ["var(--deemph)", "Forecast"]].forEach(p => {
+      const s = el("span"), sw = el("i", "sw"); sw.style.background = p[0]; s.appendChild(sw); s.appendChild(document.createTextNode(p[1])); lg.appendChild(s);
+    });
+    c.appendChild(lg);
+    const host = el("div"); c.appendChild(host);
+    const days = D.daily, kindName = { actual: "Actual", partial: "Posted so far", forecast: "Forecast" };
+    const fill = { actual: "var(--series)", partial: "var(--series-soft)", forecast: "var(--deemph)" };
+    responsive(host, W => {
+      const H = 260, L = 44, R = 8, T = 22, B = 26, pw = W - L - R, ph = H - T - B;
+      const max = Math.max.apply(null, days.map(d => d.v)), ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+      const y = v => T + ph - v / top * ph, band = pw / days.length, bw = Math.max(3, Math.min(24, band - 2));
+      const s = sv("svg", { viewBox: "0 0 " + W + " " + H, height: H, role: "img", "aria-label": "Daily cost column chart" });
+      ticks.forEach(t => {
+        s.appendChild(sv("line", { x1: L, x2: W - R, y1: y(t), y2: y(t), stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+        const tx = sv("text", { x: L - 8, y: y(t) + 4, "text-anchor": "end" }); tx.textContent = axisFmt(t, top); s.appendChild(tx);
+      });
+      const every = band >= 22 ? 1 : band >= 12 ? 2 : 5;
+      days.forEach((d, i) => {
+        const cx = L + band * i + band / 2, h = Math.max(1, d.v / top * ph), r = Math.min(4, bw / 2, h);
+        const x0 = cx - bw / 2, y0 = y(d.v), yb = T + ph;
+        const p = sv("path", { d: "M" + x0 + "," + yb + "V" + (y0 + r) + "Q" + x0 + "," + y0 + " " + (x0 + r) + "," + y0 + "H" + (x0 + bw - r) +
+          "Q" + (x0 + bw) + "," + y0 + " " + (x0 + bw) + "," + (y0 + r) + "V" + yb + "Z", fill: fill[d.kind] });
+        s.appendChild(p);
+        const dn = date(d.d).getUTCDate();
+        if (dn === 1 || dn % every === 0) { const tx = sv("text", { x: cx, y: H - 8, "text-anchor": "middle" }); tx.textContent = dn; s.appendChild(tx); }
+        if (d.oneoff) { const tx = sv("text", { x: cx, y: y0 - 6, "text-anchor": "middle", class: "lbl" }); tx.textContent = "one-off"; s.appendChild(tx); }
+        const hit = sv("rect", { x: L + band * i, y: T, width: band, height: ph, fill: "transparent", tabindex: 0 });
+        const rows = [{ name: kindName[d.kind], value: m(d.v), color: fill[d.kind] }];
+        if (d.kind === "partial" && d.est != null) rows.push({ name: "Expected when complete", value: m(d.est) });
+        if (d.oneoff) rows.push({ name: "Includes a one-off charge", value: "" });
+        hover(hit, dfmt.format(date(d.d)), rows);
+        hit.addEventListener("pointerenter", () => p.setAttribute("opacity", ".8"));
+        hit.addEventListener("pointerleave", () => p.removeAttribute("opacity"));
+        hit.style.outline = "none"; s.appendChild(hit);
+      });
+      host.appendChild(s);
+    });
+    table(c, ["Date", "Type", "Cost"], days.map(d => [dfmt.format(date(d.d)), kindName[d.kind] + (d.oneoff ? " (one-off)" : ""), m(d.v)]), [2]);
+  })();
+
+  // ---- cumulative vs budget ----------------------------------------------------------
+  (function () {
+    const c = card("c7", "Cumulative spend", "Running total for the month" + (P.month ? ", against " + mshort(P.month) : "") +
+      (D.budget ? " and the budget." : "."));
+    const days = D.daily, n = days.length, cut = days.filter(d => d.kind === "actual").length;
+    let acc = 0; const cum = days.map(d => (acc += (d.kind === "partial" && d.est != null ? d.est : d.v)));
+    let pacc = 0; const pcum = (D.prev_daily || []).map(d => (pacc += d.v));
+    const lg = el("div", "legend");
+    [["var(--series)", mshort(D.meta.month) + " actual", ""], ["var(--series)", "Forecast", " dash"]]
+      .concat(pcum.length ? [["var(--deemph)", mshort(P.month), ""]] : [])
+      .concat(D.budget ? [["var(--ink-2)", "Budget", ""]] : []).forEach(p => {
+        const s = el("span"), k = el("i", "lk" + p[2]); k.style.borderTopColor = p[0]; s.appendChild(k); s.appendChild(document.createTextNode(p[1])); lg.appendChild(s);
+      });
+    c.appendChild(lg);
+    const host = el("div"); c.appendChild(host);
+    responsive(host, W => {
+      const H = 280, L = 44, R = 78, T = 16, B = 26, pw = W - L - R, ph = H - T - B;
+      const N = Math.max(n, pcum.length);
+      const max = Math.max(cum[n - 1], pcum.length ? pcum[pcum.length - 1] : 0, D.budget || 0), ticks = niceTicks(max, 4), top = ticks[ticks.length - 1];
+      const x = i => L + (N === 1 ? 0 : pw * i / (N - 1)), y = v => T + ph - v / top * ph;
+      const s = sv("svg", { viewBox: "0 0 " + W + " " + H, height: H, role: "img", "aria-label": "Cumulative spend line chart" });
+      ticks.forEach(t => {
+        s.appendChild(sv("line", { x1: L, x2: L + pw, y1: y(t), y2: y(t), stroke: t === 0 ? "var(--axis)" : "var(--grid)", "stroke-width": 1 }));
+        const tx = sv("text", { x: L - 8, y: y(t) + 4, "text-anchor": "end" }); tx.textContent = axisFmt(t, top); s.appendChild(tx);
+      });
+      [1, 5, 10, 15, 20, 25, N].forEach(dn => { if (dn <= N) { const tx = sv("text", { x: x(dn - 1), y: H - 8, "text-anchor": "middle" }); tx.textContent = dn; s.appendChild(tx); } });
+      const path = (arr, a, b) => arr.slice(a, b).map((v, i) => (i ? "L" : "M") + x(a + i).toFixed(1) + "," + y(v).toFixed(1)).join("");
+      const labels = [];
+      if (D.budget) {
+        s.appendChild(sv("line", { x1: L, x2: L + pw, y1: y(D.budget), y2: y(D.budget), stroke: "var(--ink-2)", "stroke-width": 1 }));
+        labels.push({ y: y(D.budget), t: "Budget " + compact.format(D.budget) });
+      }
+      if (pcum.length) {
+        s.appendChild(sv("path", { d: path(pcum, 0, pcum.length), fill: "none", stroke: "var(--deemph)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+        labels.push({ y: y(pcum[pcum.length - 1]), t: mshort(P.month).slice(0, 3) + " " + compact.format(pcum[pcum.length - 1]) });
+      }
+      if (cut > 0) {
+        s.appendChild(sv("path", { d: path(cum, 0, cut) + "L" + x(cut - 1).toFixed(1) + "," + y(0) + "L" + x(0) + "," + y(0) + "Z", fill: "var(--wash)" }));
+        s.appendChild(sv("path", { d: path(cum, 0, cut), fill: "none", stroke: "var(--series)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+      }
+      if (cut < n) s.appendChild(sv("path", { d: path(cum, Math.max(0, cut - 1), n), fill: "none", stroke: "var(--series)", "stroke-width": 2, "stroke-dasharray": "5 5", "stroke-linecap": "round" }));
+      if (cut > 0) s.appendChild(sv("circle", { cx: x(cut - 1), cy: y(cum[cut - 1]), r: 4, fill: "var(--series)", stroke: "var(--surface)", "stroke-width": 2 }));
+      s.appendChild(sv("circle", { cx: x(n - 1), cy: y(cum[n - 1]), r: 4, fill: "var(--series)", stroke: "var(--surface)", "stroke-width": 2 }));
+      labels.push({ y: y(cum[n - 1]), t: "Forecast " + compact.format(cum[n - 1]), strong: true });
+      labels.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 14) labels[i].y = labels[i - 1].y + 14;
+      labels.forEach(l => { const tx = sv("text", { x: L + pw + 8, y: l.y + 4, class: "lbl" }); tx.textContent = l.t; s.appendChild(tx); });
+      const cross = sv("line", { y1: T, y2: T + ph, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }); s.appendChild(cross);
+      const hit = sv("rect", { x: L, y: T, width: pw, height: ph, fill: "transparent" });
+      hit.addEventListener("pointermove", e => {
+        const b = hit.getBoundingClientRect(), i = Math.max(0, Math.min(N - 1, Math.round((e.clientX - b.left) / b.width * (N - 1))));
+        cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+        const rows = [];
+        if (i < n) rows.push({ name: i < cut ? mshort(D.meta.month) + " actual" : "Forecast", value: m(cum[i]), color: "var(--series)", dash: i >= cut });
+        if (i < pcum.length) rows.push({ name: mshort(P.month), value: m(pcum[i]), color: "var(--deemph)" });
+        if (D.budget) rows.push({ name: "Budget", value: m(D.budget), color: "var(--ink-2)" });
+        showTip(e.clientX, e.clientY, "Through day " + (i + 1), rows);
+      });
+      hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
+      s.appendChild(hit); host.appendChild(s);
+    });
+    table(c, ["Day", mshort(D.meta.month) + " cumulative", "Type"].concat(pcum.length ? [mshort(P.month) + " cumulative"] : []),
+      days.map((d, i) => [String(i + 1), m(cum[i]), i < cut ? "Actual" : "Forecast"].concat(pcum.length ? [i < pcum.length ? m(pcum[i]) : ""] : [])),
+      pcum.length ? [1, 3] : [1]);
+  })();
+
+  // ---- ranked bars ------------------------------------------------------------------
+  function ranked(span, title, caption, items, head) {
+    const c = card(span, title, caption), rows = el("div", "rows");
+    const max = Math.max.apply(null, items.map(i => i.mtd).concat([1]));
+    items.forEach(it => {
+      rows.appendChild(el("div", "name", it.name)).title = it.name;
+      const b = el("div", "bar"); b.tabIndex = 0; const f = el("i"); f.style.width = Math.max(0, it.mtd / max * 100) + "%"; b.appendChild(f);
+      if (it.name === "Other") f.style.background = "var(--deemph)";
+      const tr = [{ name: mshort(D.meta.month) + " to date", value: m(it.mtd), color: "var(--series)" }];
+      if (it.prev != null) { tr.push({ name: "Same days in " + mshort(P.month), value: m(it.prev) }); tr.push({ name: "Change", value: signed(it.mtd - it.prev) }); }
+      hover(b, it.name, tr); rows.appendChild(b);
+      const v = el("div", "val", m(it.mtd));
+      if (it.prev) v.appendChild(el("small", null, pct((it.mtd / it.prev - 1) * 100)));
+      rows.appendChild(v);
+    });
+    c.appendChild(rows);
+    table(c, [head, mshort(D.meta.month) + " to date", "Same days in " + (P.month ? mshort(P.month) : "previous month"), "Change"],
+      items.map(i => [i.name, m(i.mtd), i.prev != null ? m(i.prev) : "", i.prev != null ? signed(i.mtd - i.prev) : ""]), [1, 2, 3]);
+  }
+  ranked("c5", "Cost by subscription", "Month to date, complete days. Percentages compare with the same days last month.", D.subs, "Subscription");
+  ranked("c6", "Top services", "Month to date, complete days. Smaller services are grouped as “Other”.", D.services, "Service");
+
+  // ---- biggest changes (diverging) -----------------------------------------------------
+  (function () {
+    const items = D.services.filter(s => s.prev != null && s.name !== "Other").map(s => ({ name: s.name, d: s.mtd - s.prev, mtd: s.mtd, prev: s.prev }))
+      .sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 8);
+    if (!items.length) return;
+    const c = card("c6", "Biggest changes by service", "Month to date against the same days in " + mshort(P.month) + ". One-off charges are included.");
+    const lg = el("div", "legend");
+    [["var(--down)", "Lower than last month"], ["var(--up)", "Higher than last month"]].forEach(p => {
+      const s = el("span"), sw = el("i", "sw"); sw.style.background = p[0]; s.appendChild(sw); s.appendChild(document.createTextNode(p[1])); lg.appendChild(s);
+    });
+    c.appendChild(lg);
+    const rows = el("div", "rows"), max = Math.max.apply(null, items.map(i => Math.abs(i.d)).concat([1]));
+    items.forEach(it => {
+      rows.appendChild(el("div", "name", it.name)).title = it.name;
+      const b = el("div", "div"); b.tabIndex = 0; const f = el("i", it.d < 0 ? "neg" : "pos"), w = Math.abs(it.d) / max * 50;
+      f.style.width = w + "%"; if (it.d < 0) f.style.right = "50%"; else f.style.left = "50%"; b.appendChild(f);
+      hover(b, it.name, [{ name: "Change", value: signed(it.d), color: it.d < 0 ? "var(--down)" : "var(--up)" },
+        { name: mshort(D.meta.month) + " to date", value: m(it.mtd) }, { name: "Same days in " + mshort(P.month), value: m(it.prev) }]);
+      rows.appendChild(b); rows.appendChild(el("div", "val", signed(it.d)));
+    });
+    c.appendChild(rows);
+    table(c, ["Service", "Change", mshort(D.meta.month) + " to date", "Same days in " + mshort(P.month)],
+      items.map(i => [i.name, signed(i.d), m(i.mtd), m(i.prev)]), [1, 2, 3]);
+  })();
+
+  // ---- savings roadmap ---------------------------------------------------------------
+  (function () {
+    const fs = D.findings || [];
+    if (!fs.length) return;
+    const c = card("c12", "Savings roadmap", "Findings from the review, per month. Nothing here has been changed by this report: every item needs an owner’s approval.");
+    const g = el("div", "grid"); g.style.marginBottom = "8px";
+    const sum = (conf, k) => fs.filter(f => f.confidence === conf && f.status !== "done").reduce((a, f) => a + (+f[k] || 0), 0);
+    [["verified", "Verified", "Measured cost and proof of non-use"], ["estimated", "Estimated", "Price × quantity"], ["possible", "Possible", "Depends on a decision"]].forEach(p => {
+      const lo = sum(p[0], "saving_low"), hi = sum(p[0], "saving_high"), t = el("div", "c4");
+      t.appendChild(el("div", "label", p[1] + " savings / month")); t.appendChild(el("div", "stat", lo === hi ? m(lo) : m(lo) + " – " + m(hi)));
+      t.appendChild(el("div", "note", p[2])); g.appendChild(t);
+    });
+    c.appendChild(g);
+    const w = el("div", "tablewrap"), t = el("table"), hr = el("tr");
+    t.style.minWidth = "720px";
+    ["ID", "Finding", "Saving / month", "Confidence", "Wave", "Owner / approval", "Status"].forEach((h, i) => hr.appendChild(el("th", i === 2 ? "n" : null, h)));
+    const thd = el("thead"); thd.appendChild(hr); t.appendChild(thd);
+    const tb = el("tbody");
+    fs.forEach(f => {
+      const tr = el("tr"), lo = +f.saving_low || 0, hi = +f.saving_high || 0;
+      tr.appendChild(el("td", null, f.id || "")); tr.appendChild(el("td", null, f.title || ""));
+      tr.appendChild(el("td", "n", lo === hi ? m(lo) : m(lo) + " – " + m(hi)));
+      const cf = el("td"); cf.appendChild(el("span", "pill " + String(f.confidence || "").replace(/[^a-z]/g, ""), f.confidence || "")); tr.appendChild(cf);
+      tr.appendChild(el("td", null, f.wave || "")); tr.appendChild(el("td", null, f.owner || ""));
+      const stt = el("td"); stt.appendChild(el("span", "pill " + (f.status === "done" ? "done" : ""), f.status || "open")); tr.appendChild(stt);
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); w.appendChild(t); c.appendChild(w);
+  })();
+
+  // ---- footer ----------------------------------------------------------------------
+  (function () {
+    const f = document.getElementById("foot");
+    f.appendChild(el("strong", null, "How to read this"));
+    const ul = el("ul");
+    ["Forecast = actual complete days + remaining weekdays × weekday rate + remaining weekend days × weekend rate + one-off charges not yet billed (" +
+      F.remaining_weekdays + " weekdays and " + F.remaining_weekend_days + " weekend days remain).",
+     "Some Azure meters post 24–48 hours late, so the last one or two days are incomplete and are forecast, not counted.",
+     "One-off days (reservation or marketplace charges) are excluded from the run rates.",
+     "Source: Azure Cost Management, " + D.meta.cost_type + ". Generated read-only by azure-finops-review; nothing in Azure was changed."]
+      .concat(D.meta.notes || []).forEach(t => ul.appendChild(el("li", null, t)));
+    f.appendChild(ul);
+  })();
+})();
+</script>
+</body>
+</html>
