@@ -10,6 +10,7 @@ Examples:
   finops_dashboard.py --tenant <tid> --month 2026-11 --budget 20000 --out dashboard.html
   finops_dashboard.py --subscriptions <id>,<id> --findings findings.json
   finops_dashboard.py --demo --out demo.html            # synthetic data, no Azure access
+  finops_dashboard.py --tenant <tid> --anonymize        # subscription names replaced
   finops_dashboard.py --data saved.json --out again.html  # re-render saved data offline
 
 findings.json (written by the reviewer, all fields optional except title):
@@ -166,6 +167,32 @@ DEMO_FINDINGS = [
 ]
 
 
+def anonymize(data):
+    """Replace subscription names with neutral labels so the file can be shared more widely.
+
+    Service names are Azure product names and stay. Findings are free text written by the
+    reviewer: subscription names inside them are replaced, anything else is left as written.
+    """
+    names = [s["name"] for s in data["subs"]]
+    names += [n for n in data["meta"]["scope"] if n not in names]
+    alias = {n: f"Subscription {i + 1}" for i, n in enumerate(names)}
+    data["meta"]["scope"] = [alias[n] for n in data["meta"]["scope"]]
+    data["meta"]["anonymized"] = True
+    for s in data["subs"]:
+        s["name"] = alias[s["name"]]
+
+    def scrub(text):
+        for real in sorted(alias, key=len, reverse=True):
+            text = text.replace(real, alias[real])
+        return text
+    data["meta"]["notes"] = [scrub(n) for n in data["meta"].get("notes", [])]
+    for f in data.get("findings") or []:
+        for k, v in list(f.items()):
+            if isinstance(v, str):
+                f[k] = scrub(v)
+    return data
+
+
 def render(data, out):
     html = TEMPLATE.read_text(encoding="utf-8")
     blob = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
@@ -195,6 +222,8 @@ def main():
     p.add_argument("--save-data", help="also write the dashboard data to this JSON file")
     p.add_argument("--data", help="render from a JSON file saved with --save-data (no Azure calls)")
     p.add_argument("--demo", action="store_true", help="render synthetic demo data (no Azure calls)")
+    p.add_argument("--anonymize", action="store_true",
+                   help="replace subscription names with 'Subscription 1..n' (for sharing outside the team)")
     a = p.parse_args()
 
     findings = json.load(open(a.findings, encoding="utf-8")) if a.findings else None
@@ -231,14 +260,31 @@ def main():
         if missing:
             data["meta"]["notes"].append("No cost data for: " + ", ".join(missing) + " (failed or no spend).")
 
+    if a.anonymize:
+        data = anonymize(data)
     out = a.out or f"finops-dashboard-{data['meta']['month']}.html"
     render(data, out)
     if a.save_data:
         json.dump(data, open(a.save_data, "w", encoding="utf-8"), indent=1)
     f = data["forecast"]
     print(f"Dashboard written: {pathlib.Path(out).resolve()}")
-    print(f"  {data['meta']['month']}: month to date {f['mtd']:,.0f}, forecast {f['forecast']:,.0f} "
-          f"(range {f['low']:,.0f} - {f['high']:,.0f}) {data['meta']['currency']}")
+    cur = data["meta"]["currency"]
+    print(f"  Scope: {', '.join(data['meta']['scope'])}  [{data['meta']['cost_type']}, {cur}]")
+    print(f"  Complete days through {data['meta']['complete_through']}; month to date {f['mtd']:,.1f} "
+          f"(posted so far incl. partial days {f['mtd_now']:,.1f})")
+    print(f"  Run rates: weekday {f['weekday_rate']:,.1f}/day ({f['weekday_low']:,.1f}-{f['weekday_high']:,.1f}), "
+          f"weekend {f['weekend_rate']:,.1f}/day ({f['weekend_low']:,.1f}-{f['weekend_high']:,.1f})")
+    print(f"  Remaining: {f['remaining_weekdays']} weekdays + {f['remaining_weekend_days']} weekend days; "
+          f"one-offs not yet billed {f['one_offs']:,.1f}")
+    print(f"  FORECAST {data['meta']['month']}: {f['forecast']:,.1f} (range {f['low']:,.1f} - {f['high']:,.1f})")
+    if data.get("prev"):
+        pv = data["prev"]
+        print(f"  Previous month {pv['month']}: {pv['total']:,.1f}; same days last month {pv['same_period']:,.1f}")
+    if data.get("budget"):
+        print(f"  Budget {data['budget']:,.0f}: forecast is {f['forecast'] / data['budget'] * 100:.0f}% of it")
+    print("  Top services month to date: " + "; ".join(f"{x['name']} {x['mtd']:,.0f}" for x in data["services"][:5]))
+    for n in data["meta"].get("notes", []):
+        print("  note: " + n)
 
 
 if __name__ == "__main__":

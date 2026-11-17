@@ -207,6 +207,7 @@ const D = /*__DATA__*/null;
     D.meta.scope.length + " subscription" + (D.meta.scope.length === 1 ? "" : "s") + ": " + D.meta.scope.join(", ");
   const badges = document.getElementById("badges");
   if (D.meta.demo) badges.appendChild(el("span", "badge demo", "Demo data"));
+  if (D.meta.anonymized) badges.appendChild(el("span", "badge", "Names anonymised"));
   ["Generated " + D.meta.generated, "Complete through " + dfmt.format(date(D.meta.complete_through)), D.meta.cost_type, cur, "Read-only"]
     .forEach(t => badges.appendChild(el("span", "badge", t)));
 

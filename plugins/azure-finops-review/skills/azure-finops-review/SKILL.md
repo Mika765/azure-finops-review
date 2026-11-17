@@ -1,6 +1,6 @@
 ---
 name: azure-finops-review
-description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, produce month-end forecasts, and generate a self-contained HTML cost dashboard. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, a cost dashboard or report to share, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
+description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, produce month-end forecasts. Every run also produces a self-contained HTML cost dashboard automatically. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, a cost dashboard or report to share, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
 hooks:
   PreToolUse:
     - matcher: "Bash|PowerShell"
@@ -29,6 +29,8 @@ A FinOps review answers four questions, in this order:
 2. **Where can we save, and how sure are we?** (verified findings, not guesses)
 3. **What do we do, in what order, and who must approve?** (roadmap)
 4. **Did it work, and where will we land?** (measurement + forecast)
+
+Every run ends with a **dashboard** (one HTML file, see "Dashboard" in section 7), produced automatically.
 
 Users often only ask one of these. Answer the one asked, but keep the others in mind — a forecast is meaningless without knowing which savings are already in the run rate, and a savings list is useless without evidence.
 
@@ -176,23 +178,28 @@ Also compare against the budget and the previous months, and give the annualized
 
 Use `references/report-template.md`. Keep the executive summary to numbers a manager can repeat: bill before, run rate now, savings in place (monthly + yearly + %), month close, next-month forecast, remaining potential, top risks. Keep a **corrections** section: when an earlier statement turns out wrong, record it — it is what makes the report trustworthy.
 
-### Dashboard
+### Dashboard (always produced)
 
-When the user wants something to look at or share (a status update, a monthly review, "show me"), also build the dashboard:
+**Every run of this skill ends with the dashboard**, whatever was asked (a forecast, a cost check, a spike analysis, a savings review). The user should not have to ask for it. Skip it only if the user says they don't want it, or if cost data could not be read at all.
 
 ```bash
 python scripts/finops_dashboard.py --tenant <tenantId> --month 2026-11 --budget 20000 --findings findings.json --out finops-dashboard-2026-11.html
 ```
 
-It writes **one self-contained HTML file** (no server, no internet, works offline and by email): forecast with range and budget, daily cost (actual / still posting / forecast), cumulative spend against the previous month and the budget, cost by subscription and by service, biggest changes by service, and the savings roadmap. It is read-only like the cost script and uses the same forecast, so its numbers match what you report in text.
+It writes **one self-contained HTML file** (no server, no internet, works offline and by email): forecast with range and budget, daily cost (actual / still posting / forecast), cumulative spend against the previous month and the budget, cost by subscription and by service, biggest changes by service, and the savings roadmap. It is read-only like the cost script and uses the same forecast function, so its numbers match what you report in text.
 
-- `--budget`: pass the amount you found with Q-BUD (the script does not read budgets itself).
+How to fit it into the work without querying twice:
+
+- **For "how much are we spending / where will we close" requests, run this script instead of `finops_cost.py --forecast`.** One data pull gives both: it prints the forecast, run rates, previous month and top services to the console, and writes the dashboard. Expect a few minutes on several subscriptions (throttling pauses are normal).
+- For deeper work (root cause, savings), do the analysis first, then build the dashboard last so it can include the findings.
+- `--budget`: pass the amount you found with Q-BUD (the script does not read budgets itself). Leave it out if there is no budget.
 - `--one-off AMOUNT@DAY`: known monthly charges, same as the forecast.
 - `--findings findings.json`: your findings from section 3, as a list of `{"id", "title", "saving_low", "saving_high", "confidence": "verified|estimated|possible", "wave", "owner", "status": "open|done"}`. Write this file yourself from the review; leave it out if you did not look for savings.
-- `--save-data data.json` keeps the numbers; `--data data.json` re-renders without calling Azure (e.g. after adding findings).
-- `--demo` renders synthetic data, useful to show the layout without any tenant access.
+- `--save-data data.json` keeps the numbers; `--data data.json` re-renders without calling Azure (e.g. to add findings or `--anonymize` afterwards).
+- `--anonymize`: replaces subscription names with "Subscription 1..n". Use it when the user wants to share the dashboard outside the team or publicly. Resource names you wrote into findings are *not* detected automatically: write findings without resource names for an anonymised dashboard.
+- `--demo` renders synthetic data, to show the layout without any tenant access.
 
-The file contains the tenant's cost data and subscription names: tell the user where it was written and let them decide who gets it. Don't upload it anywhere.
+Write the file to the user's working folder, tell them the full path, and say in one line what it contains. The file holds the tenant's cost data and (unless anonymised) subscription names: never upload, publish or commit it, and never put real data from it into a repository or a public place. The user decides who gets it.
 
 ## Pitfalls checklist
 
@@ -203,6 +210,8 @@ The file contains the tenant's cost data and subscription names: tell the user w
 - Resource state taken from billing or old notes → check the live state.
 - Cost "saved" that only moved (other workspace, pool, subscription) → report the net.
 - Scale-down of reserved compute → no saving while the reservation is paid.
+- Finished without the dashboard → build it; it is part of every run.
+- Dashboard with real data shared, uploaded or committed → never; use `--anonymize` or `--demo` for anything public.
 - Script stopped with INCOMPLETE DATA → re-run; never report totals with a missing subscription.
 - Partial last day / late meters → exclude or flag.
 - Reservation purchase day → exclude from run rate, add back once.

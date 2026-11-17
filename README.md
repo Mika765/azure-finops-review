@@ -8,7 +8,7 @@ An [Agent Skill](https://agentskills.io) that lets an AI agent (Claude Code, or 
 - **Check that savings show up in billing:** compare before and after, net of costs that only moved elsewhere.
 - **Forecast the month close:** weekday and weekend run rates, late meters, one-off reservation charges, and a range around the figure.
 
-- **Produce a dashboard:** one self-contained HTML file with the forecast, budget, daily and cumulative cost, cost by subscription and service, biggest changes and the savings roadmap.
+- **Produce a dashboard, automatically, at the end of every run:** one self-contained HTML file with the forecast, budget, daily and cumulative cost, cost by subscription and service, biggest changes and the savings roadmap.
 
 ![Dashboard built from synthetic demo data](docs/dashboard-demo.png)
 
@@ -73,9 +73,10 @@ python scripts/finops_cost.py --help
 # Dashboard: one HTML file, no server, works offline
 python scripts/finops_dashboard.py --tenant <tenantId> --budget 20000 --out dashboard.html
 python scripts/finops_dashboard.py --demo --out demo.html   # synthetic data, no Azure access
+python scripts/finops_dashboard.py --tenant <tenantId> --anonymize   # subscription names become "Subscription 1..n"
 ```
 
-The dashboard has light and dark mode, hover details and a table view under every chart, and it prints cleanly. It contains your cost data, so share it like any other internal report.
+The dashboard has light and dark mode, hover details and a table view under every chart, and it prints cleanly. The agent builds it at the end of every review without being asked. It contains your cost data, so share it like any other internal report; use `--anonymize` to hide subscription names. Everything in this repository (screenshot, demo, examples) is synthetic.
 
 ## Repository layout
 

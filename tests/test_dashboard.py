@@ -47,6 +47,16 @@ def test_render_is_self_contained_and_inert():
     assert json.loads(blob)["subs"][0]["name"].startswith("</script>")
 
 
+def test_anonymize():
+    d = _data()
+    d["subs"][0]["name"] = d["meta"]["scope"][0] = "Contoso-Prod"
+    d["findings"][0]["title"] = "Stop cluster in Contoso-Prod"
+    d = fd.anonymize(d)
+    blob = json.dumps(d)
+    assert "Contoso-Prod" not in blob and d["meta"]["anonymized"]
+    assert d["subs"][0]["name"] == "Subscription 1" and "Subscription 1" in d["findings"][0]["title"]
+
+
 def test_cli_demo():
     with tempfile.TemporaryDirectory() as t:
         out = pathlib.Path(t) / "demo.html"
@@ -57,6 +67,6 @@ def test_cli_demo():
 
 
 if __name__ == "__main__":
-    for t in (test_numbers_are_consistent, test_render_is_self_contained_and_inert, test_cli_demo):
+    for t in (test_numbers_are_consistent, test_render_is_self_contained_and_inert, test_anonymize, test_cli_demo):
         t()
-    print("OK: dashboard numbers consistent, output self-contained and inert, CLI demo works")
+    print("OK: dashboard numbers consistent, output self-contained and inert, anonymize works, CLI demo works")
