@@ -1,6 +1,6 @@
 ---
 name: azure-finops-review
-description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, produce month-end forecasts. Every run also produces a self-contained HTML cost dashboard automatically. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, a cost dashboard or report to share, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
+description: End-to-end Azure FinOps review of a tenant or subscription set — explain a cost increase or spike, find and verify savings, build a prioritized savings roadmap, check that applied savings show up in billing, produce month-end forecasts. Every run also produces a self-contained HTML cost dashboard automatically, and offers an Excel workbook that compares 1, 2 or 3 years and forecasts the next three. Uses Azure Cost Management, Resource Graph, Log Analytics and Monitor read-only via the Azure CLI. Use this skill whenever the user asks why their Azure bill went up, how much they spend, where they can save, wants a cost forecast or month-close estimate, a year-over-year comparison, a multi-year estimate for a budget or a contract negotiation, a cost dashboard, Excel or report to share, asks to check whether savings are working, mentions Sentinel/Log Analytics ingestion costs, idle or orphaned resources, reservations or savings plans, or wants a FinOps report — even if they don't say "FinOps".
 hooks:
   PreToolUse:
     - matcher: "Bash|PowerShell"
@@ -30,7 +30,7 @@ A FinOps review answers four questions, in this order:
 3. **What do we do, in what order, and who must approve?** (roadmap)
 4. **Did it work, and where will we land?** (measurement + forecast)
 
-Every run ends with a **dashboard** (one HTML file, see "Dashboard" in section 7), produced automatically.
+Every run ends with a **dashboard** (one HTML file, see "Dashboard" in section 7), produced automatically, and with an **offer** to build the Excel comparison for 1, 2 or 3 years (see "Comparison workbook" in section 7).
 
 Users often only ask one of these. Answer the one asked, but keep the others in mind — a forecast is meaningless without knowing which savings are already in the run rate, and a savings list is useless without evidence.
 
@@ -201,6 +201,32 @@ How to fit it into the work without querying twice:
 
 Write the file to the user's working folder, tell them the full path, and say in one line what it contains. The file holds the tenant's cost data and (unless anonymised) subscription names: never upload, publish or commit it, and never put real data from it into a repository or a public place. The user decides who gets it.
 
+### Comparison workbook (Excel, always offered)
+
+**Every analysis ends with an offer**: after you give the answer and the dashboard, ask the user in one short question whether they also want the Excel comparison, and **for how many years**:
+
+- **1 year**: the current year only, month by month, with the forecast to December.
+- **2 years**: the current year against the previous one.
+- **3 years**: the last three years side by side.
+
+Build it only after a yes. Do not ask again in the same session once the user has answered. If the user already asked for a **comparison across years**, a **yearly or multi-year forecast**, numbers for a **budget** or a **contract / discount negotiation**, or simply "an Excel", skip the offer and build it; ask only for the number of years if they did not give it (default 3). Then run:
+
+```bash
+python scripts/finops_workbook.py --tenant <tenantId> --years 3 --one-off 500@13:Production \
+  --scenario "Main:19000:10,15,20" --out azure-cost-2024-2026.xlsx
+```
+
+It writes one `.xlsx` with live formulas: the years side by side, every month compared, cost by subscription, the forecast for the rest of the current year, and scenarios for the next three years. It is read-only like the other scripts and prints the same totals to the console, so you can report them without opening the file. Unlike the dashboard it is not built automatically (it takes extra queries, one per subscription per year): it is offered, and built on a yes.
+
+- Needs the `openpyxl` package. If the script says it is missing, tell the user (`pip install openpyxl`); do not install packages without asking.
+- `--years N`: the number the user chose (1, 2 or 3; up to 6 is possible), ending with the current year. Older years are only available if the subscriptions existed and cost data is retained.
+- `--one-off AMOUNT@DAY:SUBSCRIPTION NAME`: monthly charges (reservations, marketplace), found as one-off days in section 1. Without a subscription name the amount goes into a "Not split" column.
+- `--scenario "NAME:BASE:G1,G2,G3"` (repeatable): monthly base cost and growth % for each of the next three years, compounded. **Growth rates are the user's assumptions, not something you can measure**: ask for them, or show what the history supports (the year-on-year changes in the workbook) and let the user choose. Without `--scenario` the sheet uses a 5% placeholder and says so; never present that as a prediction. The sheet always adds a "minimum" scenario (today's consumption, no growth).
+- `--anonymize` replaces subscription names; `--demo` writes synthetic data without any tenant access.
+- The forecast months use averaged run rates. If something was switched off in the last few days, the average still contains the old cost: say so, or correct the blue rate cells on the "Forecast inputs" sheet.
+
+Same rule as the dashboard: the file holds the tenant's cost data, so never upload, publish or commit it.
+
 ## Pitfalls checklist
 
 - Any command that writes → don't (see "Read-only, always"); `az account set` counts.
@@ -210,6 +236,8 @@ Write the file to the user's working folder, tell them the full path, and say in
 - Resource state taken from billing or old notes → check the live state.
 - Cost "saved" that only moved (other workspace, pool, subscription) → report the net.
 - Scale-down of reserved compute → no saving while the reservation is paid.
+- Multi-year scenario presented as a prediction → growth rates are assumptions; name whose they are.
+- Finished without offering the Excel comparison (and asking how many years) → offer it once.
 - Finished without the dashboard → build it; it is part of every run.
 - Dashboard with real data shared, uploaded or committed → never; use `--anonymize` or `--demo` for anything public.
 - Script stopped with INCOMPLETE DATA → re-run; never report totals with a missing subscription.

@@ -10,6 +10,8 @@ An [Agent Skill](https://agentskills.io) that lets an AI agent (Claude Code, or 
 
 - **Produce a dashboard, automatically, at the end of every run:** one self-contained HTML file with the forecast, budget, daily and cumulative cost, cost by subscription and service, biggest changes and the savings roadmap.
 
+- **Compare years and plan the next three (Excel, offered at the end of every analysis):** the agent asks whether you want it and for how many years (1, 2 or 3). One workbook with live formulas: years side by side, every month compared, cost by subscription, the forecast for the rest of the year and editable scenarios for the next three years. Example with synthetic data: [`docs/azure-cost-workbook-demo.xlsx`](docs/azure-cost-workbook-demo.xlsx).
+
 ![Dashboard built from synthetic demo data](docs/dashboard-demo.png)
 
 *Demo data. Generate it yourself with `python scripts/finops_dashboard.py --demo`.*
@@ -24,7 +26,7 @@ The skill **never changes anything in Azure**. This is enforced in four layers, 
 |---|---|---|
 | 1. **Your identity's roles** | Run the review as a user or service principal that only has **Reader**, **Cost Management Reader** and **Log Analytics Reader**. Azure then refuses every write, whatever the agent tries. *This is the only real guarantee.* | Azure RBAC (your side) |
 | 2. **Claude Code hook** | A `PreToolUse` hook checks every shell command before it runs. It blocks Azure CLI write verbs, `az account set`, `az rest` PUT/PATCH/DELETE (and POST except the Cost Management query), Az PowerShell `New-/Set-/Remove-/Start-/Stop-…`, `terraform apply/destroy/import/state rm`, `kubectl apply/delete/scale` and `helm install/uninstall`. A blocked command comes back with an instruction not to work around it. | `hooks/readonly_guard.py` |
-| 3. **Script guard** | The bundled cost script (and the dashboard script, which reuses it) can only call `az account list`, `az account get-access-token` and `POST …/Microsoft.CostManagement/query`. Anything else is refused in code. | `scripts/finops_cost.py`, `scripts/finops_dashboard.py` |
+| 3. **Script guard** | The bundled cost script (and the dashboard and workbook scripts, which reuse it) can only call `az account list`, `az account get-access-token` and `POST …/Microsoft.CostManagement/query`. Anything else is refused in code. | `scripts/finops_cost.py`, `scripts/finops_dashboard.py`, `scripts/finops_workbook.py` |
 | 4. **Instructions** | The skill's first section, *Read-only, always*, lists the allowed and forbidden commands. Every change becomes a **recommendation** that a human approves and carries out. | `SKILL.md` |
 
 Limits of layer 2: the hook reads the command text. A write hidden inside another script, or built from variables at run time, can get past it. It is a safety net, which is why layer 1 matters. The hook does not inspect MCP tools: if you also give the agent an Azure MCP server, configure that server read-only too.
@@ -51,7 +53,7 @@ Copy the same folder wherever your agent loads skills from. The instructions (la
 ## Requirements
 
 - Azure CLI, logged in (`az login`), with the `resource-graph` and `log-analytics` extensions.
-- Python 3.9+ (standard library only).
+- Python 3.9+ (standard library only). The Excel workbook also needs `openpyxl` (`pip install openpyxl`).
 - Roles on the scope under review: Reader, Cost Management Reader, Log Analytics Reader. Reading reservation details and prices at billing-account level needs billing-account roles; the skill reports what it could not see.
 
 ## Try it
@@ -74,9 +76,15 @@ python scripts/finops_cost.py --help
 python scripts/finops_dashboard.py --tenant <tenantId> --budget 20000 --out dashboard.html
 python scripts/finops_dashboard.py --demo --out demo.html   # synthetic data, no Azure access
 python scripts/finops_dashboard.py --tenant <tenantId> --anonymize   # subscription names become "Subscription 1..n"
+
+# Excel workbook: several years compared, plus scenarios for the next three years
+python scripts/finops_workbook.py --tenant <tenantId> --years 3 --scenario "Main:19000:10,15,20"
+python scripts/finops_workbook.py --demo --out demo.xlsx    # synthetic data, no Azure access
 ```
 
 The dashboard has light and dark mode, hover details and a table view under every chart, and it prints cleanly. The agent builds it at the end of every review without being asked. It contains your cost data, so share it like any other internal report; use `--anonymize` to hide subscription names. Everything in this repository (screenshot, demo, examples) is synthetic.
+
+The workbook's scenario growth rates are assumptions you pass in; the workbook shows the history next to them so they can be checked. Its formulas are calculated when the file is opened in Excel or LibreOffice.
 
 ## Repository layout
 
@@ -90,12 +98,14 @@ plugins/azure-finops-review/
     hooks/readonly_guard.py              # the guard
     scripts/finops_cost.py               # Cost Management queries, forecast, comparisons
     scripts/finops_dashboard.py          # self-contained HTML dashboard
+    scripts/finops_workbook.py           # multi-year Excel workbook with scenarios (needs openpyxl)
     assets/dashboard_template.html       # dashboard layout (inline CSS/JS, no dependencies)
     references/checks.md                 # savings checks by category
     references/queries.md                # KQL, Resource Graph, Activity Log, budgets
     references/report-template.md
-tests/                                   # python tests/test_readonly_guard.py, python tests/test_dashboard.py
+tests/                                   # python tests/test_readonly_guard.py, test_dashboard.py, test_workbook.py
 docs/dashboard-demo.png
+docs/azure-cost-workbook-demo.xlsx       # workbook built with --demo
 ```
 
 ## Contributing
